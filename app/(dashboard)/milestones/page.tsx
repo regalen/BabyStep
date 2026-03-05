@@ -1,11 +1,13 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Star, Trophy } from "lucide-react";
+import { useDashboard } from "@/components/app/DashboardProvider";
 
 interface Milestone {
   id: string;
@@ -27,23 +29,14 @@ const MILESTONE_SUGGESTIONS = [
   "Waved bye-bye 👋",
 ];
 
-function useBabyId() {
-  const [babyId, setBabyId] = useState<string | null>(null);
-  useEffect(() => {
-    fetch("/api/babies")
-      .then((r) => r.json())
-      .then((data) => setBabyId(data[0]?.id ?? null));
-  }, []);
-  return babyId;
-}
-
 export default function MilestonesPage() {
-  const babyId = useBabyId();
+  const router = useRouter();
+  const { activeBaby } = useDashboard();
+  const babyId = activeBaby?.id ?? null;
   const [title, setTitle] = useState("");
   const [date, setDate] = useState(new Date().toISOString().split("T")[0]);
   const [notes, setNotes] = useState("");
   const [saving, setSaving] = useState(false);
-  const [saved, setSaved] = useState(false);
   const [history, setHistory] = useState<Milestone[]>([]);
 
   useEffect(() => {
@@ -51,7 +44,7 @@ export default function MilestonesPage() {
     fetch(`/api/milestones?babyId=${babyId}`)
       .then((r) => r.json())
       .then(setHistory);
-  }, [babyId, saved]);
+  }, [babyId]);
 
   async function handleSave() {
     if (!babyId || !title) return;
@@ -62,10 +55,7 @@ export default function MilestonesPage() {
       body: JSON.stringify({ babyId, title, date, notes: notes || null }),
     });
     setSaving(false);
-    setSaved((v) => !v);
-    setTitle("");
-    setNotes("");
-    setDate(new Date().toISOString().split("T")[0]);
+    router.push("/");
   }
 
   return (

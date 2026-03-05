@@ -1,12 +1,21 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Pill, Clock } from "lucide-react";
+import { cn } from "@/lib/utils";
 import { toDatetimeLocal, formatDistanceToNow } from "@/lib/time";
+import { useDashboard } from "@/components/app/DashboardProvider";
+
+interface MedPreset {
+  id: string;
+  name: string;
+  defaultDosage: string | null;
+}
 
 interface MedEntry {
   id: string;
@@ -16,41 +25,39 @@ interface MedEntry {
   notes: string | null;
 }
 
-const COMMON_MEDS = [
-  "Infant Tylenol",
-  "Infant Advil",
-  "Vitamin D",
-  "Gripe Water",
-  "Simethicone",
-  "Probiotics",
-];
-
-function useBabyId() {
-  const [babyId, setBabyId] = useState<string | null>(null);
-  useEffect(() => {
-    fetch("/api/babies")
-      .then((r) => r.json())
-      .then((data) => setBabyId(data[0]?.id ?? null));
-  }, []);
-  return babyId;
-}
-
 export default function MedicationPage() {
-  const babyId = useBabyId();
+  const router = useRouter();
+  const { activeBaby } = useDashboard();
+  const babyId = activeBaby?.id ?? null;
+
+  const [presets, setPresets] = useState<MedPreset[]>([]);
   const [name, setName] = useState("");
   const [dosage, setDosage] = useState("");
   const [timestamp, setTimestamp] = useState(toDatetimeLocal(new Date()));
   const [notes, setNotes] = useState("");
   const [saving, setSaving] = useState(false);
-  const [saved, setSaved] = useState(false);
   const [history, setHistory] = useState<MedEntry[]>([]);
 
   useEffect(() => {
     if (!babyId) return;
+    fetch(`/api/medication-presets?babyId=${babyId}`)
+      .then((r) => r.json())
+      .then(setPresets)
+      .catch(() => {});
     fetch(`/api/medications?babyId=${babyId}`)
       .then((r) => r.json())
       .then(setHistory);
-  }, [babyId, saved]);
+  }, [babyId]);
+
+  function selectPreset(preset: MedPreset) {
+    if (name === preset.name) {
+      setName("");
+      setDosage("");
+    } else {
+      setName(preset.name);
+      setDosage(preset.defaultDosage ?? "");
+    }
+  }
 
   async function handleSave() {
     if (!babyId || !name || !dosage) return;
@@ -67,11 +74,7 @@ export default function MedicationPage() {
       }),
     });
     setSaving(false);
-    setSaved((v) => !v);
-    setName("");
-    setDosage("");
-    setNotes("");
-    setTimestamp(toDatetimeLocal(new Date()));
+    router.push("/");
   }
 
   return (
@@ -85,31 +88,49 @@ export default function MedicationPage() {
 
       <Card>
         <CardContent className="pt-5 space-y-5">
-          {/* Quick select */}
-          <div className="space-y-2">
-            <Label className="text-base">Common Medications</Label>
-            <div className="grid grid-cols-2 gap-2">
-              {COMMON_MEDS.map((m) => (
-                <Button
-                  key={m}
-                  variant={name === m ? "default" : "outline"}
-                  className="h-11 text-sm justify-start px-3"
-                  onClick={() => setName(name === m ? "" : m)}
-                >
-                  {m}
-                </Button>
-              ))}
+          {/* Presets */}
+          {presets.length > 0 && (
+            <div className="space-y-2">
+              <Label className="text-base">My Medications</Label>
+              <div className="grid grid-cols-2 gap-2">
+                {presets.map((p) => (
+                  <Button
+                    key={p.id}
+                    variant={name === p.name ? "default" : "outline"}
+                    className={cn("h-auto min-h-11 py-2 text-sm flex-col items-start px-3 gap-0.5", name === p.name && "shadow-md")}
+                    onClick={() => selectPreset(p)}
+                  >
+                    <span className="font-medium truncate w-full text-left">{p.name}</span>
+                    {p.defaultDosage && (
+                      <span className={cn("text-xs", name === p.name ? "text-primary-foreground/70" : "text-muted-foreground")}>
+                        {p.defaultDosage}
+                      </span>
+                    )}
+                  </Button>
+                ))}
+              </div>
+              {presets.length === 0 && (
+                <p className="text-xs text-muted-foreground">
+                  Add medication presets in Settings.
+                </p>
+              )}
             </div>
-          </div>
+          )}
 
-          {/* Custom name */}
+          {presets.length === 0 && (
+            <p className="text-xs text-muted-foreground p-3 rounded-lg bg-muted/50">
+              Tip: Add medication presets in Settings for quick selection.
+            </p>
+          )}
+
+          {/* Medication name */}
           <div className="space-y-2">
             <Label htmlFor="med-name" className="text-base">
-              Medication Name
+              {presets.length > 0 ? "Or Type a Name" : "Medication Name"}
             </Label>
             <Input
               id="med-name"
-              placeholder="Or type a custom name"
+              placeholder="e.g. Infant Tylenol"
               value={name}
               onChange={(e) => setName(e.target.value)}
               className="h-12 text-base"
@@ -125,6 +146,7 @@ export default function MedicationPage() {
               value={dosage}
               onChange={(e) => setDosage(e.target.value)}
               className="h-12 text-base"
+              required
             />
           </div>
 

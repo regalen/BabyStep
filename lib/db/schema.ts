@@ -155,3 +155,40 @@ export const milestones = sqliteTable("milestones", {
     .notNull()
     .$defaultFn(() => new Date()),
 });
+
+export const appSettings = sqliteTable("appSettings", {
+  id: text("id")
+    .primaryKey()
+    .$defaultFn(() => crypto.randomUUID()),
+  userId: text("userId")
+    .notNull()
+    .unique()
+    .references(() => user.id, { onDelete: "cascade" }),
+  units: text("units", { enum: ["metric", "imperial"] })
+    .notNull()
+    .default("metric"),
+  formulaOnly: integer("formulaOnly", { mode: "boolean" })
+    .notNull()
+    .default(false),
+  // JSON array of enabled activity keys e.g. '["feeding","diaper","sleep","medication","milestones"]'
+  enabledActivities: text("enabledActivities")
+    .notNull()
+    .default('["feeding","diaper","sleep","medication","milestones"]'),
+  updatedAt: integer("updatedAt", { mode: "timestamp" })
+    .notNull()
+    .$defaultFn(() => new Date()),
+});
+
+export const medicationPresets = sqliteTable("medicationPresets", {
+  id: text("id")
+    .primaryKey()
+    .$defaultFn(() => crypto.randomUUID()),
+  babyId: text("babyId")
+    .notNull()
+    .references(() => babies.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  defaultDosage: text("defaultDosage"), // null = user enters manually each time
+  createdAt: integer("createdAt", { mode: "timestamp" })
+    .notNull()
+    .$defaultFn(() => new Date()),
+});

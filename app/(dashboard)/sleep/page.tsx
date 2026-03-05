@@ -1,27 +1,19 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
+import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Moon, Play, Square } from "lucide-react";
 import { formatDuration, formatDistanceToNow, formatTime } from "@/lib/time";
+import { useDashboard } from "@/components/app/DashboardProvider";
 
 interface SleepEntry {
   id: string;
   startTime: string;
   endTime: string | null;
   notes: string | null;
-}
-
-function useBabyId() {
-  const [babyId, setBabyId] = useState<string | null>(null);
-  useEffect(() => {
-    fetch("/api/babies")
-      .then((r) => r.json())
-      .then((data) => setBabyId(data[0]?.id ?? null));
-  }, []);
-  return babyId;
 }
 
 const SLEEP_KEY = "babystep-active-sleep";
@@ -33,12 +25,13 @@ interface ActiveSleep {
 }
 
 export default function SleepPage() {
-  const babyId = useBabyId();
+  const router = useRouter();
+  const { activeBaby } = useDashboard();
+  const babyId = activeBaby?.id ?? null;
   const [activeSleep, setActiveSleep] = useState<ActiveSleep | null>(null);
   const [elapsed, setElapsed] = useState(0);
   const [history, setHistory] = useState<SleepEntry[]>([]);
   const [loading, setLoading] = useState(false);
-  const [saved, setSaved] = useState(false);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // Load persisted active sleep from localStorage
@@ -76,7 +69,7 @@ export default function SleepPage() {
     fetch(`/api/sleeps?babyId=${babyId}`)
       .then((r) => r.json())
       .then(setHistory);
-  }, [babyId, saved]);
+  }, [babyId]);
 
   async function startSleep() {
     if (!babyId) return;
@@ -105,8 +98,8 @@ export default function SleepPage() {
     });
     localStorage.removeItem(SLEEP_KEY);
     setActiveSleep(null);
-    setSaved((v) => !v);
     setLoading(false);
+    router.push("/");
   }
 
   const isSleeping = !!activeSleep;

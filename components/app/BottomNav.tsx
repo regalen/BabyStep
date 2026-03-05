@@ -4,18 +4,25 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Home, Milk, Baby, Moon, Pill, Star } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useDashboard } from "@/components/app/DashboardProvider";
 
-const nav = [
-  { href: "/", icon: Home, label: "Home" },
-  { href: "/feeding", icon: Milk, label: "Feed" },
-  { href: "/diaper", icon: Baby, label: "Diaper" },
-  { href: "/sleep", icon: Moon, label: "Sleep" },
-  { href: "/medication", icon: Pill, label: "Meds" },
-  { href: "/milestones", icon: Star, label: "More" },
+const ALL_NAV = [
+  { href: "/", icon: Home, label: "Home", key: null }, // always shown
+  { href: "/feeding", icon: Milk, label: "Feed", key: "feeding" },
+  { href: "/diaper", icon: Baby, label: "Diaper", key: "diaper" },
+  { href: "/sleep", icon: Moon, label: "Sleep", key: "sleep" },
+  { href: "/medication", icon: Pill, label: "Meds", key: "medication" },
+  { href: "/milestones", icon: Star, label: "More", key: "milestones" },
 ];
 
 export function BottomNav() {
   const pathname = usePathname();
+  const { settings } = useDashboard();
+  const enabled = settings.enabledActivities;
+
+  const nav = ALL_NAV.filter(
+    (item) => item.key === null || enabled.includes(item.key)
+  );
 
   return (
     <nav className="fixed bottom-0 left-0 right-0 z-50 bg-card border-t border-border/60 pb-safe">

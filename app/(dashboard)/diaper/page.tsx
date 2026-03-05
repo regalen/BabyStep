@@ -1,14 +1,15 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Badge } from "@/components/ui/badge";
 import { Baby, Clock } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toDatetimeLocal, formatDistanceToNow } from "@/lib/time";
+import { useDashboard } from "@/components/app/DashboardProvider";
 
 type DiaperType = "wet" | "dirty" | "both";
 
@@ -29,16 +30,6 @@ interface DiaperEntry {
   timestamp: string;
 }
 
-function useBabyId() {
-  const [babyId, setBabyId] = useState<string | null>(null);
-  useEffect(() => {
-    fetch("/api/babies")
-      .then((r) => r.json())
-      .then((data) => setBabyId(data[0]?.id ?? null));
-  }, []);
-  return babyId;
-}
-
 const typeConfig = {
   wet: { emoji: "💧", label: "Wet" },
   dirty: { emoji: "💩", label: "Dirty" },
@@ -46,13 +37,14 @@ const typeConfig = {
 };
 
 export default function DiaperPage() {
-  const babyId = useBabyId();
+  const router = useRouter();
+  const { activeBaby } = useDashboard();
+  const babyId = activeBaby?.id ?? null;
   const [type, setType] = useState<DiaperType>("wet");
   const [color, setColor] = useState<string>("");
   const [notes, setNotes] = useState("");
   const [timestamp, setTimestamp] = useState(toDatetimeLocal(new Date()));
   const [saving, setSaving] = useState(false);
-  const [saved, setSaved] = useState(false);
   const [history, setHistory] = useState<DiaperEntry[]>([]);
 
   useEffect(() => {
@@ -60,7 +52,7 @@ export default function DiaperPage() {
     fetch(`/api/diapers?babyId=${babyId}`)
       .then((r) => r.json())
       .then(setHistory);
-  }, [babyId, saved]);
+  }, [babyId]);
 
   async function handleSave() {
     if (!babyId) return;
@@ -77,10 +69,7 @@ export default function DiaperPage() {
       }),
     });
     setSaving(false);
-    setSaved((v) => !v);
-    setNotes("");
-    setColor("");
-    setTimestamp(toDatetimeLocal(new Date()));
+    router.push("/");
   }
 
   return (
