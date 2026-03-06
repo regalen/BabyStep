@@ -12,6 +12,7 @@ import { useDashboard } from "@/components/app/DashboardProvider";
 import { cn } from "@/lib/utils";
 import { LogOut, Moon, Sun, Baby, Download, Plus, Trash2, Pill } from "lucide-react";
 import { formatWeight } from "@/lib/units";
+import { formatDob } from "@/lib/time";
 
 interface BabyProfile {
   id: string;
@@ -173,7 +174,7 @@ export default function SettingsPage() {
               <div>
                 <p className="font-medium">{baby.firstName} {baby.lastName}</p>
                 <p className="text-xs text-muted-foreground">
-                  Born {new Date(baby.dob).toLocaleDateString()}
+                  Born {formatDob(baby.dob)}
                   {baby.birthWeightGrams
                     ? ` · ${formatWeight(baby.birthWeightGrams, settings.units)} at birth`
                     : ""}

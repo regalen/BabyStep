@@ -29,7 +29,7 @@ export default async function DashboardLayout({
   return (
     <DashboardProvider babies={babyList}>
       <div className="min-h-screen flex flex-col bg-background">
-        <TopBar babies={babyList} />
+        <TopBar />
         <main className="flex-1 pb-20 overflow-y-auto">{children}</main>
         <BottomNav />
       </div>
