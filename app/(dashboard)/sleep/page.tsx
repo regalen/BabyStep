@@ -7,7 +7,8 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Moon, Play, Square } from "lucide-react";
 import { formatDuration, formatDistanceToNow, formatTime } from "@/lib/time";
-import { useDashboard } from "@/components/app/DashboardProvider";
+import { useDashboard, type Baby } from "@/components/app/DashboardProvider";
+import { BabyChipSelector } from "@/components/app/BabyChipSelector";
 
 interface SleepEntry {
   id: string;
@@ -26,8 +27,10 @@ interface ActiveSleep {
 
 export default function SleepPage() {
   const router = useRouter();
-  const { activeBaby } = useDashboard();
-  const babyId = activeBaby?.id ?? null;
+  const { activeBaby, setActiveBaby } = useDashboard();
+  const [selectedBaby, setSelectedBaby] = useState<Baby | null>(null);
+  const [showBabyError, setShowBabyError] = useState(false);
+  const babyId = selectedBaby?.id ?? null;
   const [activeSleep, setActiveSleep] = useState<ActiveSleep | null>(null);
   const [elapsed, setElapsed] = useState(0);
   const [history, setHistory] = useState<SleepEntry[]>([]);
@@ -72,7 +75,8 @@ export default function SleepPage() {
   }, [babyId]);
 
   async function startSleep() {
-    if (!babyId) return;
+    if (!babyId) { setShowBabyError(true); return; }
+    setShowBabyError(false);
     setLoading(true);
     const startTime = new Date().toISOString();
     const res = await fetch("/api/sleeps", {
@@ -112,6 +116,13 @@ export default function SleepPage() {
           Sleep Tracker
         </h2>
       </div>
+
+      {/* Baby selector */}
+      <BabyChipSelector
+        selectedId={selectedBaby?.id ?? null}
+        onSelect={(b) => { setSelectedBaby(b); setActiveBaby(b); setShowBabyError(false); }}
+        showError={showBabyError}
+      />
 
       {/* Main sleep timer card */}
       <Card className={isSleeping ? "border-violet-500/40 shadow-lg shadow-violet-500/10" : ""}>

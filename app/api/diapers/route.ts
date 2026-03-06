@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { diapers, babies } from "@/lib/db/schema";
-import { eq, desc, and } from "drizzle-orm";
+import { eq, desc, and, gte } from "drizzle-orm";
 import { headers } from "next/headers";
 
 async function getBabyForUser(userId: string, babyId: string) {
@@ -24,12 +24,20 @@ export async function GET(request: NextRequest) {
   const baby = await getBabyForUser(session.user.id, babyId);
   if (!baby) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
+  const fromParam = request.nextUrl.searchParams.get("from");
+  const limitParam = request.nextUrl.searchParams.get("limit");
+  const limit = limitParam ? parseInt(limitParam, 10) : 50;
+
+  const whereClause = fromParam
+    ? and(eq(diapers.babyId, babyId), gte(diapers.timestamp, new Date(fromParam)))
+    : eq(diapers.babyId, babyId);
+
   const result = await db
     .select()
     .from(diapers)
-    .where(eq(diapers.babyId, babyId))
+    .where(whereClause)
     .orderBy(desc(diapers.timestamp))
-    .limit(50);
+    .limit(limit);
 
   return NextResponse.json(result);
 }

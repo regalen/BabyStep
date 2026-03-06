@@ -10,8 +10,9 @@ import { Badge } from "@/components/ui/badge";
 import { Milk, Clock } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toDatetimeLocal, formatDistanceToNow } from "@/lib/time";
-import { useDashboard } from "@/components/app/DashboardProvider";
+import { useDashboard, type Baby } from "@/components/app/DashboardProvider";
 import { formatVolume, parseVolumeToMl, volumeLabel, volumePlaceholder } from "@/lib/units";
+import { BabyChipSelector } from "@/components/app/BabyChipSelector";
 
 type FeedType = "breast" | "bottle" | "both";
 type Side = "left" | "right" | "both";
@@ -28,8 +29,10 @@ interface FeedEntry {
 
 export default function FeedingPage() {
   const router = useRouter();
-  const { activeBaby, settings } = useDashboard();
+  const { activeBaby, setActiveBaby, settings } = useDashboard();
   const { formulaOnly, units } = settings;
+  const [selectedBaby, setSelectedBaby] = useState<Baby | null>(null);
+  const [showBabyError, setShowBabyError] = useState(false);
 
   const [type, setType] = useState<FeedType>(formulaOnly ? "bottle" : "breast");
   const [side, setSide] = useState<Side>("left");
@@ -40,7 +43,7 @@ export default function FeedingPage() {
   const [history, setHistory] = useState<FeedEntry[]>([]);
   const [refreshKey, setRefreshKey] = useState(0);
 
-  const babyId = activeBaby?.id ?? null;
+  const babyId = selectedBaby?.id ?? null;
 
   useEffect(() => {
     if (!babyId) return;
@@ -55,7 +58,8 @@ export default function FeedingPage() {
   }, [formulaOnly, type]);
 
   async function handleSave() {
-    if (!babyId) return;
+    if (!babyId) { setShowBabyError(true); return; }
+    setShowBabyError(false);
     setSaving(true);
     const amountMl = amount ? parseVolumeToMl(amount, units) : null;
     await fetch("/api/feedings", {
@@ -87,6 +91,13 @@ export default function FeedingPage() {
 
       <Card>
         <CardContent className="pt-5 space-y-5">
+          {/* Baby selector */}
+          <BabyChipSelector
+            selectedId={selectedBaby?.id ?? null}
+            onSelect={(b) => { setSelectedBaby(b); setActiveBaby(b); setShowBabyError(false); }}
+            showError={showBabyError}
+          />
+
           {/* Feed type */}
           {showBreastOptions ? (
             <div className="space-y-2">

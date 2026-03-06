@@ -9,7 +9,8 @@ import { Label } from "@/components/ui/label";
 import { Baby, Clock } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toDatetimeLocal, formatDistanceToNow } from "@/lib/time";
-import { useDashboard } from "@/components/app/DashboardProvider";
+import { useDashboard, type Baby as BabyProfile } from "@/components/app/DashboardProvider";
+import { BabyChipSelector } from "@/components/app/BabyChipSelector";
 
 type DiaperType = "wet" | "dirty" | "both";
 
@@ -38,8 +39,10 @@ const typeConfig = {
 
 export default function DiaperPage() {
   const router = useRouter();
-  const { activeBaby } = useDashboard();
-  const babyId = activeBaby?.id ?? null;
+  const { activeBaby, setActiveBaby } = useDashboard();
+  const [selectedBaby, setSelectedBaby] = useState<BabyProfile | null>(null);
+  const [showBabyError, setShowBabyError] = useState(false);
+  const babyId = selectedBaby?.id ?? null;
   const [type, setType] = useState<DiaperType>("wet");
   const [color, setColor] = useState<string>("");
   const [notes, setNotes] = useState("");
@@ -55,7 +58,8 @@ export default function DiaperPage() {
   }, [babyId]);
 
   async function handleSave() {
-    if (!babyId) return;
+    if (!babyId) { setShowBabyError(true); return; }
+    setShowBabyError(false);
     setSaving(true);
     await fetch("/api/diapers", {
       method: "POST",
@@ -83,6 +87,13 @@ export default function DiaperPage() {
 
       <Card>
         <CardContent className="pt-5 space-y-5">
+          {/* Baby selector */}
+          <BabyChipSelector
+            selectedId={selectedBaby?.id ?? null}
+            onSelect={(b) => { setSelectedBaby(b); setActiveBaby(b); setShowBabyError(false); }}
+            showError={showBabyError}
+          />
+
           {/* Type */}
           <div className="space-y-2">
             <Label className="text-base">Type</Label>

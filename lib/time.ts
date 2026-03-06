@@ -44,3 +44,34 @@ export function toDatetimeLocal(date: Date): string {
   const pad = (n: number) => String(n).padStart(2, "0");
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
 }
+
+/**
+ * Format a YYYY-MM-DD date string as DD/MM/YYYY, locale-independently.
+ */
+export function formatDob(dob: string): string {
+  const [y, m, d] = dob.split("-");
+  return `${d}/${m}/${y}`;
+}
+
+/**
+ * Calculate age in months from a date-of-birth string (YYYY-MM-DD).
+ */
+export function ageInMonths(dob: string): number {
+  const birth = new Date(dob);
+  const now = new Date();
+  return (now.getFullYear() - birth.getFullYear()) * 12 +
+         (now.getMonth() - birth.getMonth());
+}
+
+/**
+ * Format age in months as a human-readable string.
+ * e.g. "4 months", "1 year 3 months"
+ */
+export function formatAge(dob: string): string {
+  const months = ageInMonths(dob);
+  if (months < 12) return `${months} month${months !== 1 ? "s" : ""}`;
+  const years = Math.floor(months / 12);
+  const rem = months % 12;
+  if (rem === 0) return `${years} year${years !== 1 ? "s" : ""}`;
+  return `${years}y ${rem}mo`;
+}
