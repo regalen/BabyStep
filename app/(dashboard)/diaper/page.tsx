@@ -15,12 +15,10 @@ import { BabyChipSelector } from "@/components/app/BabyChipSelector";
 type DiaperType = "wet" | "dirty" | "both";
 
 const DIAPER_COLORS = [
-  { label: "Yellow", value: "yellow", emoji: "🟡" },
-  { label: "Green", value: "green", emoji: "🟢" },
-  { label: "Brown", value: "brown", emoji: "🟤" },
   { label: "Black", value: "black", emoji: "⚫" },
-  { label: "Orange", value: "orange", emoji: "🟠" },
-  { label: "Red", value: "red", emoji: "🔴" },
+  { label: "Brown", value: "brown", emoji: "🟤" },
+  { label: "Green", value: "green", emoji: "🟢" },
+  { label: "Yellow", value: "yellow", emoji: "🟡" },
 ];
 
 interface DiaperEntry {

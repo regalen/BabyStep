@@ -14,6 +14,17 @@ async function getBabyForUser(userId: string, babyId: string) {
   return result[0] ?? null;
 }
 
+async function getDiaperForUser(userId: string, diaperId: string) {
+  const result = await db
+    .select({ babyId: diapers.babyId })
+    .from(diapers)
+    .where(eq(diapers.id, diaperId))
+    .limit(1);
+  if (!result[0]) return null;
+  const baby = await getBabyForUser(userId, result[0].babyId);
+  return baby ? result[0] : null;
+}
+
 export async function GET(request: NextRequest) {
   const session = await auth.api.getSession({ headers: await headers() });
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -68,4 +79,43 @@ export async function POST(request: NextRequest) {
     .returning();
 
   return NextResponse.json(diaper, { status: 201 });
+}
+
+export async function PATCH(request: NextRequest) {
+  const session = await auth.api.getSession({ headers: await headers() });
+  if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+  const body = await request.json();
+  const { id, type, color, notes, timestamp } = body;
+  if (!id) return NextResponse.json({ error: "id required" }, { status: 400 });
+
+  const owned = await getDiaperForUser(session.user.id, id);
+  if (!owned) return NextResponse.json({ error: "Not found" }, { status: 404 });
+
+  const [updated] = await db
+    .update(diapers)
+    .set({
+      ...(type !== undefined && { type }),
+      ...(color !== undefined && { color: color || null }),
+      ...(notes !== undefined && { notes: notes || null }),
+      ...(timestamp !== undefined && { timestamp: new Date(timestamp) }),
+    })
+    .where(eq(diapers.id, id))
+    .returning();
+
+  return NextResponse.json(updated);
+}
+
+export async function DELETE(request: NextRequest) {
+  const session = await auth.api.getSession({ headers: await headers() });
+  if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+  const id = request.nextUrl.searchParams.get("id");
+  if (!id) return NextResponse.json({ error: "id required" }, { status: 400 });
+
+  const owned = await getDiaperForUser(session.user.id, id);
+  if (!owned) return NextResponse.json({ error: "Not found" }, { status: 404 });
+
+  await db.delete(diapers).where(eq(diapers.id, id));
+  return NextResponse.json({ ok: true });
 }

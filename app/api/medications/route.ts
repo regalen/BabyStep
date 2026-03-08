@@ -14,6 +14,17 @@ async function getBabyForUser(userId: string, babyId: string) {
   return result[0] ?? null;
 }
 
+async function getMedForUser(userId: string, medId: string) {
+  const result = await db
+    .select({ babyId: medications.babyId })
+    .from(medications)
+    .where(eq(medications.id, medId))
+    .limit(1);
+  if (!result[0]) return null;
+  const baby = await getBabyForUser(userId, result[0].babyId);
+  return baby ? result[0] : null;
+}
+
 export async function GET(request: NextRequest) {
   const session = await auth.api.getSession({ headers: await headers() });
   if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -60,4 +71,43 @@ export async function POST(request: NextRequest) {
     .returning();
 
   return NextResponse.json(med, { status: 201 });
+}
+
+export async function PATCH(request: NextRequest) {
+  const session = await auth.api.getSession({ headers: await headers() });
+  if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+  const body = await request.json();
+  const { id, name, dosage, timestamp, notes } = body;
+  if (!id) return NextResponse.json({ error: "id required" }, { status: 400 });
+
+  const owned = await getMedForUser(session.user.id, id);
+  if (!owned) return NextResponse.json({ error: "Not found" }, { status: 404 });
+
+  const [updated] = await db
+    .update(medications)
+    .set({
+      ...(name !== undefined && { name }),
+      ...(dosage !== undefined && { dosage }),
+      ...(notes !== undefined && { notes: notes || null }),
+      ...(timestamp !== undefined && { timestamp: new Date(timestamp) }),
+    })
+    .where(eq(medications.id, id))
+    .returning();
+
+  return NextResponse.json(updated);
+}
+
+export async function DELETE(request: NextRequest) {
+  const session = await auth.api.getSession({ headers: await headers() });
+  if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+  const id = request.nextUrl.searchParams.get("id");
+  if (!id) return NextResponse.json({ error: "id required" }, { status: 400 });
+
+  const owned = await getMedForUser(session.user.id, id);
+  if (!owned) return NextResponse.json({ error: "Not found" }, { status: 404 });
+
+  await db.delete(medications).where(eq(medications.id, id));
+  return NextResponse.json({ ok: true });
 }
