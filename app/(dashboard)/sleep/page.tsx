@@ -1,13 +1,16 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
-import { useRouter } from "next/navigation";
+import { useState, useEffect, useRef, Suspense } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Moon, Play, Square } from "lucide-react";
 import { formatDuration, formatDistanceToNow, formatTime } from "@/lib/time";
-import { useDashboard } from "@/components/app/DashboardProvider";
+import { useDashboard, type Baby } from "@/components/app/DashboardProvider";
+import { BabyChipSelector } from "@/components/app/BabyChipSelector";
+import { useSession } from "@/lib/auth-client";
+import { ReadOnlyBanner } from "@/components/app/ReadOnlyBanner";
 
 interface SleepEntry {
   id: string;
@@ -16,7 +19,8 @@ interface SleepEntry {
   notes: string | null;
 }
 
-const SLEEP_KEY = "babystep-active-sleep";
+const SLEEPS_KEY = "babystep-active-sleeps";
+const SLEEP_KEY_LEGACY = "babystep-active-sleep";
 
 interface ActiveSleep {
   id: string;
@@ -24,30 +28,73 @@ interface ActiveSleep {
   babyId: string;
 }
 
-export default function SleepPage() {
+function SleepPageInner() {
   const router = useRouter();
-  const { activeBaby } = useDashboard();
-  const babyId = activeBaby?.id ?? null;
-  const [activeSleep, setActiveSleep] = useState<ActiveSleep | null>(null);
+  const searchParams = useSearchParams();
+  const { data: session } = useSession();
+  const isReadOnly = (session?.user as { role?: string } | undefined)?.role === "read_only";
+  const { babies, activeBaby, setActiveBaby } = useDashboard();
+  const [selectedBaby, setSelectedBaby] = useState<Baby | null>(null);
+  const [showBabyError, setShowBabyError] = useState(false);
+  const babyId = selectedBaby?.id ?? null;
+
+  // Map of all active sleeps keyed by babyId
+  const [activeSleeps, setActiveSleeps] = useState<Record<string, ActiveSleep>>({});
+  const activeSleep = babyId ? (activeSleeps[babyId] ?? null) : null;
+
   const [elapsed, setElapsed] = useState(0);
   const [history, setHistory] = useState<SleepEntry[]>([]);
   const [loading, setLoading] = useState(false);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  // Load persisted active sleep from localStorage
-  useEffect(() => {
-    const stored = localStorage.getItem(SLEEP_KEY);
-    if (stored) {
-      try {
-        const parsed = JSON.parse(stored) as ActiveSleep;
-        setActiveSleep(parsed);
-      } catch {
-        localStorage.removeItem(SLEEP_KEY);
+  // Load sleep map from localStorage (with legacy migration)
+  function loadSleeps(): Record<string, ActiveSleep> {
+    try {
+      const raw = localStorage.getItem(SLEEPS_KEY);
+      if (raw) return JSON.parse(raw);
+      // Migrate old single-sleep format
+      const legacy = localStorage.getItem(SLEEP_KEY_LEGACY);
+      if (legacy) {
+        const old = JSON.parse(legacy) as ActiveSleep;
+        const migrated: Record<string, ActiveSleep> = { [old.babyId]: old };
+        localStorage.setItem(SLEEPS_KEY, JSON.stringify(migrated));
+        localStorage.removeItem(SLEEP_KEY_LEGACY);
+        return migrated;
       }
+    } catch {
+      // ignore
     }
+    return {};
+  }
+
+  // Load sleeps on mount
+  useEffect(() => {
+    const sleeps = loadSleeps();
+    setActiveSleeps(sleeps);
   }, []);
 
-  // Update elapsed time every second when sleeping
+  // Auto-select baby from ?babyId query param once babies are loaded
+  const initialBabyId = searchParams.get("babyId");
+  const didAutoSelect = useRef(false);
+  useEffect(() => {
+    if (didAutoSelect.current || !babies.length) return;
+    if (initialBabyId) {
+      const baby = babies.find((b) => b.id === initialBabyId);
+      if (baby) {
+        setSelectedBaby(baby);
+        setActiveBaby(baby);
+        didAutoSelect.current = true;
+        return;
+      }
+    }
+    // Fall back to activeBaby
+    if (activeBaby) {
+      setSelectedBaby(activeBaby);
+      didAutoSelect.current = true;
+    }
+  }, [babies, initialBabyId, activeBaby]);
+
+  // Update elapsed time every second when selected baby is sleeping
   useEffect(() => {
     if (activeSleep) {
       const update = () => {
@@ -63,7 +110,7 @@ export default function SleepPage() {
     };
   }, [activeSleep]);
 
-  // Load history
+  // Load history for selected baby
   useEffect(() => {
     if (!babyId) return;
     fetch(`/api/sleeps?babyId=${babyId}`)
@@ -71,8 +118,15 @@ export default function SleepPage() {
       .then(setHistory);
   }, [babyId]);
 
+  function saveSleeps(updated: Record<string, ActiveSleep>) {
+    localStorage.setItem(SLEEPS_KEY, JSON.stringify(updated));
+    setActiveSleeps(updated);
+    window.dispatchEvent(new CustomEvent("babystep-sleeps-updated"));
+  }
+
   async function startSleep() {
-    if (!babyId) return;
+    if (!babyId) { setShowBabyError(true); return; }
+    setShowBabyError(false);
     setLoading(true);
     const startTime = new Date().toISOString();
     const res = await fetch("/api/sleeps", {
@@ -82,13 +136,12 @@ export default function SleepPage() {
     });
     const sleep = await res.json();
     const active: ActiveSleep = { id: sleep.id, startTime, babyId };
-    localStorage.setItem(SLEEP_KEY, JSON.stringify(active));
-    setActiveSleep(active);
+    saveSleeps({ ...activeSleeps, [babyId]: active });
     setLoading(false);
   }
 
   async function stopSleep() {
-    if (!activeSleep) return;
+    if (!activeSleep || !babyId) return;
     setLoading(true);
     const endTime = new Date().toISOString();
     await fetch("/api/sleeps", {
@@ -96,8 +149,9 @@ export default function SleepPage() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ sleepId: activeSleep.id, endTime }),
     });
-    localStorage.removeItem(SLEEP_KEY);
-    setActiveSleep(null);
+    const updated = { ...activeSleeps };
+    delete updated[babyId];
+    saveSleeps(updated);
     setLoading(false);
     router.push("/");
   }
@@ -113,8 +167,17 @@ export default function SleepPage() {
         </h2>
       </div>
 
+      {isReadOnly && <ReadOnlyBanner />}
+
+      {/* Baby selector */}
+      <BabyChipSelector
+        selectedId={selectedBaby?.id ?? null}
+        onSelect={(b) => { setSelectedBaby(b); setActiveBaby(b); setShowBabyError(false); }}
+        showError={showBabyError}
+      />
+
       {/* Main sleep timer card */}
-      <Card className={isSleeping ? "border-violet-500/40 shadow-lg shadow-violet-500/10" : ""}>
+      {!isReadOnly && <Card className={isSleeping ? "border-violet-500/40 shadow-lg shadow-violet-500/10" : ""}>
         <CardContent className="pt-6 pb-6 flex flex-col items-center gap-6">
           {/* Status */}
           <div className="text-center">
@@ -162,7 +225,7 @@ export default function SleepPage() {
             )}
           </Button>
         </CardContent>
-      </Card>
+      </Card>}
 
       {/* History */}
       {history.length > 0 && (
@@ -203,5 +266,13 @@ export default function SleepPage() {
         </div>
       )}
     </div>
+  );
+}
+
+export default function SleepPage() {
+  return (
+    <Suspense>
+      <SleepPageInner />
+    </Suspense>
   );
 }

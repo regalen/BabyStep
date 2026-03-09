@@ -45,7 +45,8 @@ interface DashboardProviderProps {
   children: React.ReactNode;
 }
 
-export function DashboardProvider({ babies, children }: DashboardProviderProps) {
+export function DashboardProvider({ babies: initialBabies, children }: DashboardProviderProps) {
+  const [babies, setBabies] = useState<Baby[]>(initialBabies);
   const [activeBaby, setActiveBabyState] = useState<Baby | null>(null);
   const [settings, setSettings] = useState<AppSettings>(DEFAULT_SETTINGS);
 
@@ -56,6 +57,26 @@ export function DashboardProvider({ babies, children }: DashboardProviderProps) 
     const found = babies.find((b) => b.id === storedId) ?? babies[0];
     setActiveBabyState(found);
   }, [babies]);
+
+  // Refetch babies when settings page archives/unarchives/deletes one
+  useEffect(() => {
+    function reload() {
+      fetch("/api/babies")
+        .then((r) => r.json())
+        .then((list: Baby[]) => {
+          setBabies(list);
+          // If active baby was archived/deleted, reset to first remaining
+          setActiveBabyState((prev) => {
+            if (!prev) return list[0] ?? null;
+            const still = list.find((b) => b.id === prev.id);
+            return still ?? list[0] ?? null;
+          });
+        })
+        .catch(() => {});
+    }
+    window.addEventListener("babystep-babies-updated", reload);
+    return () => window.removeEventListener("babystep-babies-updated", reload);
+  }, []);
 
   // Fetch app settings
   useEffect(() => {

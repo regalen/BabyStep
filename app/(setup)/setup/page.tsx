@@ -68,9 +68,15 @@ export default function SetupPage() {
       firstName,
       lastName,
     } as Parameters<typeof signUp.email>[0]);
+    if (err) {
+      setLoading(false);
+      setError(err.message || "Failed to create account");
+      return;
+    }
+    // Promote the first (and only) user to admin role
+    await fetch("/api/setup", { method: "POST" });
     setLoading(false);
-    if (err) setError(err.message || "Failed to create account");
-    else setStep("baby");
+    setStep("baby");
   }
 
   async function handleAddBaby(e: React.FormEvent) {

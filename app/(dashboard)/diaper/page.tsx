@@ -9,17 +9,18 @@ import { Label } from "@/components/ui/label";
 import { Baby, Clock } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toDatetimeLocal, formatDistanceToNow } from "@/lib/time";
-import { useDashboard } from "@/components/app/DashboardProvider";
+import { useDashboard, type Baby as BabyProfile } from "@/components/app/DashboardProvider";
+import { BabyChipSelector } from "@/components/app/BabyChipSelector";
+import { useSession } from "@/lib/auth-client";
+import { ReadOnlyBanner } from "@/components/app/ReadOnlyBanner";
 
 type DiaperType = "wet" | "dirty" | "both";
 
 const DIAPER_COLORS = [
-  { label: "Yellow", value: "yellow", emoji: "🟡" },
-  { label: "Green", value: "green", emoji: "🟢" },
-  { label: "Brown", value: "brown", emoji: "🟤" },
   { label: "Black", value: "black", emoji: "⚫" },
-  { label: "Orange", value: "orange", emoji: "🟠" },
-  { label: "Red", value: "red", emoji: "🔴" },
+  { label: "Brown", value: "brown", emoji: "🟤" },
+  { label: "Green", value: "green", emoji: "🟢" },
+  { label: "Yellow", value: "yellow", emoji: "🟡" },
 ];
 
 interface DiaperEntry {
@@ -38,8 +39,12 @@ const typeConfig = {
 
 export default function DiaperPage() {
   const router = useRouter();
-  const { activeBaby } = useDashboard();
-  const babyId = activeBaby?.id ?? null;
+  const { data: session } = useSession();
+  const isReadOnly = (session?.user as { role?: string } | undefined)?.role === "read_only";
+  const { activeBaby, setActiveBaby } = useDashboard();
+  const [selectedBaby, setSelectedBaby] = useState<BabyProfile | null>(null);
+  const [showBabyError, setShowBabyError] = useState(false);
+  const babyId = selectedBaby?.id ?? null;
   const [type, setType] = useState<DiaperType>("wet");
   const [color, setColor] = useState<string>("");
   const [notes, setNotes] = useState("");
@@ -55,7 +60,8 @@ export default function DiaperPage() {
   }, [babyId]);
 
   async function handleSave() {
-    if (!babyId) return;
+    if (!babyId) { setShowBabyError(true); return; }
+    setShowBabyError(false);
     setSaving(true);
     await fetch("/api/diapers", {
       method: "POST",
@@ -81,8 +87,18 @@ export default function DiaperPage() {
         </h2>
       </div>
 
+      {isReadOnly ? (
+        <ReadOnlyBanner />
+      ) : (
       <Card>
         <CardContent className="pt-5 space-y-5">
+          {/* Baby selector */}
+          <BabyChipSelector
+            selectedId={selectedBaby?.id ?? null}
+            onSelect={(b) => { setSelectedBaby(b); setActiveBaby(b); setShowBabyError(false); }}
+            showError={showBabyError}
+          />
+
           {/* Type */}
           <div className="space-y-2">
             <Label className="text-base">Type</Label>
@@ -159,6 +175,7 @@ export default function DiaperPage() {
           </Button>
         </CardContent>
       </Card>
+      )}
 
       {/* History */}
       {history.length > 0 && (

@@ -9,7 +9,10 @@ import { Label } from "@/components/ui/label";
 import { Pill, Clock } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { toDatetimeLocal, formatDistanceToNow } from "@/lib/time";
-import { useDashboard } from "@/components/app/DashboardProvider";
+import { useDashboard, type Baby } from "@/components/app/DashboardProvider";
+import { BabyChipSelector } from "@/components/app/BabyChipSelector";
+import { useSession } from "@/lib/auth-client";
+import { ReadOnlyBanner } from "@/components/app/ReadOnlyBanner";
 
 interface MedPreset {
   id: string;
@@ -27,8 +30,12 @@ interface MedEntry {
 
 export default function MedicationPage() {
   const router = useRouter();
-  const { activeBaby } = useDashboard();
-  const babyId = activeBaby?.id ?? null;
+  const { data: session } = useSession();
+  const isReadOnly = (session?.user as { role?: string } | undefined)?.role === "read_only";
+  const { activeBaby, setActiveBaby } = useDashboard();
+  const [selectedBaby, setSelectedBaby] = useState<Baby | null>(null);
+  const [showBabyError, setShowBabyError] = useState(false);
+  const babyId = selectedBaby?.id ?? null;
 
   const [presets, setPresets] = useState<MedPreset[]>([]);
   const [name, setName] = useState("");
@@ -60,7 +67,9 @@ export default function MedicationPage() {
   }
 
   async function handleSave() {
-    if (!babyId || !name || !dosage) return;
+    if (!babyId) { setShowBabyError(true); return; }
+    if (!name || !dosage) return;
+    setShowBabyError(false);
     setSaving(true);
     await fetch("/api/medications", {
       method: "POST",
@@ -86,8 +95,18 @@ export default function MedicationPage() {
         </h2>
       </div>
 
+      {isReadOnly ? (
+        <ReadOnlyBanner />
+      ) : (
       <Card>
         <CardContent className="pt-5 space-y-5">
+          {/* Baby selector */}
+          <BabyChipSelector
+            selectedId={selectedBaby?.id ?? null}
+            onSelect={(b) => { setSelectedBaby(b); setActiveBaby(b); setShowBabyError(false); }}
+            showError={showBabyError}
+          />
+
           {/* Presets */}
           {presets.length > 0 && (
             <div className="space-y-2">
@@ -187,6 +206,7 @@ export default function MedicationPage() {
           </Button>
         </CardContent>
       </Card>
+      )}
 
       {/* History */}
       {history.length > 0 && (

@@ -7,7 +7,10 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Star, Trophy } from "lucide-react";
-import { useDashboard } from "@/components/app/DashboardProvider";
+import { useDashboard, type Baby } from "@/components/app/DashboardProvider";
+import { BabyChipSelector } from "@/components/app/BabyChipSelector";
+import { useSession } from "@/lib/auth-client";
+import { ReadOnlyBanner } from "@/components/app/ReadOnlyBanner";
 
 interface Milestone {
   id: string;
@@ -31,8 +34,12 @@ const MILESTONE_SUGGESTIONS = [
 
 export default function MilestonesPage() {
   const router = useRouter();
-  const { activeBaby } = useDashboard();
-  const babyId = activeBaby?.id ?? null;
+  const { data: session } = useSession();
+  const isReadOnly = (session?.user as { role?: string } | undefined)?.role === "read_only";
+  const { activeBaby, setActiveBaby } = useDashboard();
+  const [selectedBaby, setSelectedBaby] = useState<Baby | null>(null);
+  const [showBabyError, setShowBabyError] = useState(false);
+  const babyId = selectedBaby?.id ?? null;
   const [title, setTitle] = useState("");
   const [date, setDate] = useState(new Date().toISOString().split("T")[0]);
   const [notes, setNotes] = useState("");
@@ -47,7 +54,9 @@ export default function MilestonesPage() {
   }, [babyId]);
 
   async function handleSave() {
-    if (!babyId || !title) return;
+    if (!babyId) { setShowBabyError(true); return; }
+    if (!title) return;
+    setShowBabyError(false);
     setSaving(true);
     await fetch("/api/milestones", {
       method: "POST",
@@ -67,8 +76,18 @@ export default function MilestonesPage() {
         </h2>
       </div>
 
+      {isReadOnly ? (
+        <ReadOnlyBanner />
+      ) : (
       <Card>
         <CardContent className="pt-5 space-y-5">
+          {/* Baby selector */}
+          <BabyChipSelector
+            selectedId={selectedBaby?.id ?? null}
+            onSelect={(b) => { setSelectedBaby(b); setActiveBaby(b); setShowBabyError(false); }}
+            showError={showBabyError}
+          />
+
           {/* Suggestions */}
           <div className="space-y-2">
             <Label className="text-base">Quick Add</Label>
@@ -135,6 +154,7 @@ export default function MilestonesPage() {
           </Button>
         </CardContent>
       </Card>
+      )}
 
       {/* History */}
       {history.length > 0 && (
