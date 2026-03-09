@@ -1,24 +1,13 @@
 services:
   babystep:
-    build: .
-    ports:
-      - "3000:3000"
-    volumes:
-      - babystep-data:/data
+    image: ghcr.io/regalen/babystep:latest
+    container_name: babystep
     environment:
-      - NODE_ENV=production
-      - DATABASE_PATH=/data/babystep.db
-      - BETTER_AUTH_SECRET=${BETTER_AUTH_SECRET:-change-this-secret-in-production}
-      - BETTER_AUTH_URL=${BETTER_AUTH_URL:-http://localhost:3000}
-      - NEXT_PUBLIC_APP_URL=${NEXT_PUBLIC_APP_URL:-http://localhost:3000}
+      - PUID=1000
+      - PGID=1000
+      - TZ=Etc/UTC
+    volumes:
+      - /path/to/babystep/config:/config
+    ports:
+      - 3000:3000
     restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://localhost:3000/api/setup"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 30s
-
-volumes:
-  babystep-data:
-    driver: local

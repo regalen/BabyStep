@@ -13,6 +13,8 @@ import { toDatetimeLocal, formatDistanceToNow, formatDuration } from "@/lib/time
 import { useDashboard, type Baby } from "@/components/app/DashboardProvider";
 import { formatVolume, parseVolumeToMl, volumeLabel, volumePlaceholder } from "@/lib/units";
 import { BabyChipSelector } from "@/components/app/BabyChipSelector";
+import { useSession } from "@/lib/auth-client";
+import { ReadOnlyBanner } from "@/components/app/ReadOnlyBanner";
 
 type FeedType = "breast" | "bottle" | "both";
 type Side = "left" | "right" | "both";
@@ -39,6 +41,8 @@ interface ActiveFeeding {
 function FeedingPageInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const { data: session } = useSession();
+  const isReadOnly = (session?.user as { role?: string } | undefined)?.role === "read_only";
   const { babies, activeBaby, setActiveBaby, settings } = useDashboard();
   const { formulaOnly, units } = settings;
 
@@ -195,6 +199,9 @@ function FeedingPageInner() {
         </h2>
       </div>
 
+      {isReadOnly ? (
+        <ReadOnlyBanner />
+      ) : (
       <Card className={activeFeeding ? "border-amber-500/40 shadow-lg shadow-amber-500/10" : ""}>
         <CardContent className="pt-5 space-y-5">
           {/* Baby selector */}
@@ -339,6 +346,7 @@ function FeedingPageInner() {
           )}
         </CardContent>
       </Card>
+      )}
 
       {/* History */}
       {history.length > 0 && (

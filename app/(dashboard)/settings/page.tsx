@@ -10,7 +10,7 @@ import { Label } from "@/components/ui/label";
 import { useTheme } from "@/components/app/ThemeProvider";
 import { useDashboard } from "@/components/app/DashboardProvider";
 import { cn } from "@/lib/utils";
-import { LogOut, Moon, Sun, Baby, Download, Plus, Trash2, Pill } from "lucide-react";
+import { LogOut, Moon, Sun, Baby, Download, Plus, Trash2, Pill, Archive, ArchiveRestore, ChevronDown, ChevronRight, Users } from "lucide-react";
 import { formatWeight } from "@/lib/units";
 import { formatDob } from "@/lib/time";
 
@@ -20,12 +20,22 @@ interface BabyProfile {
   lastName: string;
   dob: string;
   birthWeightGrams: number | null;
+  archivedAt: string | null;
 }
 
 interface MedPreset {
   id: string;
   name: string;
   defaultDosage: string | null;
+}
+
+interface UserRecord {
+  id: string;
+  firstName: string;
+  lastName: string;
+  email: string;
+  role: "admin" | "user" | "read_only";
+  createdAt: string;
 }
 
 const ALL_ACTIVITIES = [
@@ -36,15 +46,25 @@ const ALL_ACTIVITIES = [
   { key: "milestones", label: "Milestones", emoji: "⭐" },
 ];
 
+const ROLE_LABELS: Record<string, string> = {
+  admin: "Admin",
+  user: "User",
+  read_only: "Read Only",
+};
+
 export default function SettingsPage() {
   const router = useRouter();
   const { data: session } = useSession();
   const { theme, toggleTheme } = useTheme();
   const { activeBaby, settings, patchSettings } = useDashboard();
 
+  const isAdmin = (session?.user as { role?: string } | undefined)?.role === "admin";
+
   const [babies, setBabies] = useState<BabyProfile[]>([]);
   const [showAddBaby, setShowAddBaby] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [showArchived, setShowArchived] = useState(false);
 
   // New baby form
   const [babyFirst, setBabyFirst] = useState("");
@@ -59,11 +79,62 @@ export default function SettingsPage() {
   const [addingPreset, setAddingPreset] = useState(false);
   const [savingPreset, setSavingPreset] = useState(false);
 
+  // Users management
+  const [userList, setUserList] = useState<UserRecord[]>([]);
+  const [showAddUser, setShowAddUser] = useState(false);
+  const [savingUser, setSavingUser] = useState(false);
+  const [confirmDeleteUserId, setConfirmDeleteUserId] = useState<string | null>(null);
+  const [newUserFirst, setNewUserFirst] = useState("");
+  const [newUserLast, setNewUserLast] = useState("");
+  const [newUserEmail, setNewUserEmail] = useState("");
+  const [newUserPassword, setNewUserPassword] = useState("");
+  const [newUserRole, setNewUserRole] = useState<"admin" | "user" | "read_only">("user");
+
   useEffect(() => {
-    fetch("/api/babies")
+    fetch("/api/babies?includeArchived=true")
       .then((r) => r.json())
       .then(setBabies);
   }, []);
+
+  useEffect(() => {
+    if (!isAdmin) return;
+    fetch("/api/users")
+      .then((r) => r.json())
+      .then(setUserList)
+      .catch(() => {});
+  }, [isAdmin]);
+
+  function notifyBabiesUpdated() {
+    window.dispatchEvent(new CustomEvent("babystep-babies-updated"));
+  }
+
+  async function handleArchive(id: string) {
+    await fetch("/api/babies", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id, action: "archive" }),
+    });
+    setBabies((prev) => prev.map((b) => b.id === id ? { ...b, archivedAt: new Date().toISOString() } : b));
+    notifyBabiesUpdated();
+  }
+
+  async function handleUnarchive(id: string) {
+    await fetch("/api/babies", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id, action: "unarchive" }),
+    });
+    setBabies((prev) => prev.map((b) => b.id === id ? { ...b, archivedAt: null } : b));
+    notifyBabiesUpdated();
+  }
+
+  async function handleDelete(id: string) {
+    if (confirmDeleteId !== id) { setConfirmDeleteId(id); return; }
+    await fetch(`/api/babies?id=${id}`, { method: "DELETE" });
+    setBabies((prev) => prev.filter((b) => b.id !== id));
+    setConfirmDeleteId(null);
+    notifyBabiesUpdated();
+  }
 
   useEffect(() => {
     if (!activeBaby) return;
@@ -149,6 +220,45 @@ export default function SettingsPage() {
     patchSettings({ enabledActivities: updated });
   }
 
+  async function handleRoleChange(userId: string, role: string) {
+    await fetch("/api/users", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: userId, role }),
+    });
+    setUserList((prev) => prev.map((u) => u.id === userId ? { ...u, role: role as UserRecord["role"] } : u));
+  }
+
+  async function handleDeleteUser(userId: string) {
+    if (confirmDeleteUserId !== userId) { setConfirmDeleteUserId(userId); return; }
+    await fetch(`/api/users?id=${userId}`, { method: "DELETE" });
+    setUserList((prev) => prev.filter((u) => u.id !== userId));
+    setConfirmDeleteUserId(null);
+  }
+
+  async function handleAddUser(e: React.FormEvent) {
+    e.preventDefault();
+    setSavingUser(true);
+    const res = await fetch("/api/users", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        firstName: newUserFirst,
+        lastName: newUserLast,
+        email: newUserEmail,
+        password: newUserPassword,
+        role: newUserRole,
+      }),
+    });
+    if (res.ok) {
+      const newUser = await res.json();
+      setUserList((prev) => [...prev, newUser]);
+      setShowAddUser(false);
+      setNewUserFirst(""); setNewUserLast(""); setNewUserEmail(""); setNewUserPassword(""); setNewUserRole("user");
+    }
+    setSavingUser(false);
+  }
+
   return (
     <div className="p-4 space-y-5 max-w-lg mx-auto">
       <div className="pt-2">
@@ -160,151 +270,223 @@ export default function SettingsPage() {
         )}
       </div>
 
-      {/* Baby Profiles */}
-      <Card>
-        <CardHeader className="pb-3">
-          <CardTitle className="text-base flex items-center gap-2">
-            <Baby size={18} className="text-sky-500" />
-            Baby Profiles
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          {babies.map((baby) => (
-            <div key={baby.id} className="flex items-center justify-between p-3 rounded-lg bg-muted/50">
-              <div>
-                <p className="font-medium">{baby.firstName} {baby.lastName}</p>
-                <p className="text-xs text-muted-foreground">
-                  Born {formatDob(baby.dob)}
-                  {baby.birthWeightGrams
-                    ? ` · ${formatWeight(baby.birthWeightGrams, settings.units)} at birth`
-                    : ""}
-                </p>
-              </div>
-            </div>
-          ))}
-
-          {showAddBaby ? (
-            <form onSubmit={handleAddBaby} className="space-y-3 pt-2 border-t border-border">
-              <div className="grid grid-cols-2 gap-2">
-                <div className="space-y-1">
-                  <Label htmlFor="nb-first" className="text-sm">First Name</Label>
-                  <Input id="nb-first" value={babyFirst} onChange={(e) => setBabyFirst(e.target.value)} required className="h-10" />
+      {/* Baby Profiles — admin only */}
+      {isAdmin && (
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-base flex items-center gap-2">
+              <Baby size={18} className="text-sky-500" />
+              Baby Profiles
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {babies.filter((b) => !b.archivedAt).map((baby) => (
+              <div key={baby.id} className="flex items-center justify-between p-3 rounded-lg bg-muted/50">
+                <div className="flex-1 min-w-0">
+                  <p className="font-medium">{baby.firstName} {baby.lastName}</p>
+                  <p className="text-xs text-muted-foreground">
+                    Born {formatDob(baby.dob)}
+                    {baby.birthWeightGrams
+                      ? ` · ${formatWeight(baby.birthWeightGrams, settings.units)} at birth`
+                      : ""}
+                  </p>
                 </div>
-                <div className="space-y-1">
-                  <Label htmlFor="nb-last" className="text-sm">Last Name</Label>
-                  <Input id="nb-last" value={babyLast} onChange={(e) => setBabyLast(e.target.value)} required className="h-10" />
+                <div className="flex gap-1 ml-2 shrink-0">
+                  <Button
+                    variant="ghost" size="icon"
+                    className="h-8 w-8 text-muted-foreground hover:text-foreground"
+                    title="Archive baby"
+                    onClick={() => handleArchive(baby.id)}
+                  >
+                    <Archive size={15} />
+                  </Button>
+                  <Button
+                    variant="ghost" size="icon"
+                    className={cn("h-8 w-8", confirmDeleteId === baby.id ? "text-destructive bg-destructive/10" : "text-muted-foreground hover:text-destructive")}
+                    title={confirmDeleteId === baby.id ? "Tap again to confirm" : "Delete baby"}
+                    onClick={() => handleDelete(baby.id)}
+                    onBlur={() => setConfirmDeleteId(null)}
+                  >
+                    <Trash2 size={15} />
+                  </Button>
                 </div>
               </div>
-              <div className="space-y-1">
-                <Label htmlFor="nb-dob" className="text-sm">Date of Birth</Label>
-                <Input id="nb-dob" type="date" value={dob} onChange={(e) => setDob(e.target.value)} required className="h-10" />
-              </div>
-              <div className="space-y-1">
-                <Label htmlFor="nb-weight" className="text-sm">
-                  Birth Weight ({settings.units === "imperial" ? "lbs" : "kg"}) <span className="text-muted-foreground">(optional)</span>
-                </Label>
-                <Input id="nb-weight" type="number" value={birthWeight} onChange={(e) => setBirthWeight(e.target.value)} className="h-10" inputMode="decimal" />
-              </div>
-              <div className="flex gap-2">
-                <Button type="submit" className="flex-1" disabled={saving}>{saving ? "Saving…" : "Add Baby"}</Button>
-                <Button type="button" variant="outline" onClick={() => setShowAddBaby(false)}>Cancel</Button>
-              </div>
-            </form>
-          ) : (
-            <Button variant="outline" className="w-full h-11" onClick={() => setShowAddBaby(true)}>
-              <Plus size={16} className="mr-2" />Add Baby
-            </Button>
-          )}
-        </CardContent>
-      </Card>
-
-      {/* Units */}
-      <Card>
-        <CardHeader className="pb-3">
-          <CardTitle className="text-base">Units of Measure</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="grid grid-cols-2 gap-3">
-            {(["metric", "imperial"] as const).map((u) => (
-              <button
-                key={u}
-                onClick={() => patchSettings({ units: u })}
-                className={cn(
-                  "flex flex-col items-center gap-1.5 p-4 rounded-xl border-2 transition-all",
-                  settings.units === u ? "border-primary bg-primary/10" : "border-border"
-                )}
-              >
-                <span className="text-xl">{u === "metric" ? "🌍" : "🇺🇸"}</span>
-                <span className="font-semibold text-sm capitalize">{u}</span>
-                <span className="text-xs text-muted-foreground">{u === "metric" ? "ml, kg, cm" : "oz, lbs, in"}</span>
-              </button>
             ))}
-          </div>
-        </CardContent>
-      </Card>
 
-      {/* Feeding Mode */}
-      <Card>
-        <CardHeader className="pb-3">
-          <CardTitle className="text-base">Feeding Mode</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="font-medium">Formula / Bottle Only</p>
-              <p className="text-xs text-muted-foreground">Hide breastfeeding options</p>
-            </div>
-            <button
-              onClick={() => patchSettings({ formulaOnly: !settings.formulaOnly })}
-              className={cn(
-                "relative w-12 h-6 rounded-full transition-colors",
-                settings.formulaOnly ? "bg-primary" : "bg-muted-foreground/30"
-              )}
-              aria-label="Toggle formula only mode"
-            >
-              <span className={cn(
-                "absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform",
-                settings.formulaOnly && "translate-x-6"
-              )} />
-            </button>
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Activity Tracking */}
-      <Card>
-        <CardHeader className="pb-3">
-          <CardTitle className="text-base">Activity Tracking</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-2">
-          {ALL_ACTIVITIES.map(({ key, label, emoji }) => {
-            const on = settings.enabledActivities.includes(key);
-            return (
-              <div key={key} className="flex items-center justify-between p-3 rounded-lg bg-muted/50">
-                <span className="flex items-center gap-2 font-medium text-sm">
-                  <span>{emoji}</span>{label}
-                </span>
+            {babies.some((b) => b.archivedAt) && (
+              <div>
                 <button
-                  onClick={() => toggleActivity(key)}
-                  className={cn(
-                    "relative w-10 h-5 rounded-full transition-colors",
-                    on ? "bg-primary" : "bg-muted-foreground/30"
-                  )}
-                  aria-label={`Toggle ${label}`}
+                  className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors py-1"
+                  onClick={() => setShowArchived((v) => !v)}
                 >
-                  <span className={cn(
-                    "absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform",
-                    on && "translate-x-5"
-                  )} />
+                  {showArchived ? <ChevronDown size={15} /> : <ChevronRight size={15} />}
+                  Archived Babies ({babies.filter((b) => b.archivedAt).length})
                 </button>
+                {showArchived && (
+                  <div className="space-y-2 mt-2">
+                    {babies.filter((b) => b.archivedAt).map((baby) => (
+                      <div key={baby.id} className="flex items-center justify-between p-3 rounded-lg bg-muted/30 border border-border/50">
+                        <div className="flex-1 min-w-0">
+                          <p className="font-medium text-muted-foreground">{baby.firstName} {baby.lastName}</p>
+                          <p className="text-xs text-muted-foreground">
+                            Archived {baby.archivedAt ? new Date(baby.archivedAt).toLocaleDateString() : ""}
+                          </p>
+                        </div>
+                        <div className="flex gap-1 ml-2 shrink-0">
+                          <Button
+                            variant="ghost" size="icon"
+                            className="h-8 w-8 text-muted-foreground hover:text-foreground"
+                            title="Restore baby"
+                            onClick={() => handleUnarchive(baby.id)}
+                          >
+                            <ArchiveRestore size={15} />
+                          </Button>
+                          <Button
+                            variant="ghost" size="icon"
+                            className={cn("h-8 w-8", confirmDeleteId === baby.id ? "text-destructive bg-destructive/10" : "text-muted-foreground hover:text-destructive")}
+                            title={confirmDeleteId === baby.id ? "Tap again to confirm" : "Delete baby"}
+                            onClick={() => handleDelete(baby.id)}
+                            onBlur={() => setConfirmDeleteId(null)}
+                          >
+                            <Trash2 size={15} />
+                          </Button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
-            );
-          })}
-          <p className="text-xs text-muted-foreground pt-1">
-            Disabled activities are hidden from the nav and home screen.
-          </p>
-        </CardContent>
-      </Card>
+            )}
+
+            {showAddBaby ? (
+              <form onSubmit={handleAddBaby} className="space-y-3 pt-2 border-t border-border">
+                <div className="grid grid-cols-2 gap-2">
+                  <div className="space-y-1">
+                    <Label htmlFor="nb-first" className="text-sm">First Name</Label>
+                    <Input id="nb-first" value={babyFirst} onChange={(e) => setBabyFirst(e.target.value)} required className="h-10" />
+                  </div>
+                  <div className="space-y-1">
+                    <Label htmlFor="nb-last" className="text-sm">Last Name</Label>
+                    <Input id="nb-last" value={babyLast} onChange={(e) => setBabyLast(e.target.value)} required className="h-10" />
+                  </div>
+                </div>
+                <div className="space-y-1">
+                  <Label htmlFor="nb-dob" className="text-sm">Date of Birth</Label>
+                  <Input id="nb-dob" type="date" value={dob} onChange={(e) => setDob(e.target.value)} required className="h-10" />
+                </div>
+                <div className="space-y-1">
+                  <Label htmlFor="nb-weight" className="text-sm">
+                    Birth Weight ({settings.units === "imperial" ? "lbs" : "kg"}) <span className="text-muted-foreground">(optional)</span>
+                  </Label>
+                  <Input id="nb-weight" type="number" value={birthWeight} onChange={(e) => setBirthWeight(e.target.value)} className="h-10" inputMode="decimal" />
+                </div>
+                <div className="flex gap-2">
+                  <Button type="submit" className="flex-1" disabled={saving}>{saving ? "Saving…" : "Add Baby"}</Button>
+                  <Button type="button" variant="outline" onClick={() => setShowAddBaby(false)}>Cancel</Button>
+                </div>
+              </form>
+            ) : (
+              <Button variant="outline" className="w-full h-11" onClick={() => setShowAddBaby(true)}>
+                <Plus size={16} className="mr-2" />Add Baby
+              </Button>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Units — admin only */}
+      {isAdmin && (
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-base">Units of Measure</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-2 gap-3">
+              {(["metric", "imperial"] as const).map((u) => (
+                <button
+                  key={u}
+                  onClick={() => patchSettings({ units: u })}
+                  className={cn(
+                    "flex flex-col items-center gap-1.5 p-4 rounded-xl border-2 transition-all",
+                    settings.units === u ? "border-primary bg-primary/10" : "border-border"
+                  )}
+                >
+                  <span className="text-xl">{u === "metric" ? "🌍" : "🇺🇸"}</span>
+                  <span className="font-semibold text-sm capitalize">{u}</span>
+                  <span className="text-xs text-muted-foreground">{u === "metric" ? "ml, kg, cm" : "oz, lbs, in"}</span>
+                </button>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Feeding Mode — admin only */}
+      {isAdmin && (
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-base">Feeding Mode</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="font-medium">Formula / Bottle Only</p>
+                <p className="text-xs text-muted-foreground">Hide breastfeeding options</p>
+              </div>
+              <button
+                onClick={() => patchSettings({ formulaOnly: !settings.formulaOnly })}
+                className={cn(
+                  "relative w-12 h-6 rounded-full transition-colors",
+                  settings.formulaOnly ? "bg-primary" : "bg-muted-foreground/30"
+                )}
+                aria-label="Toggle formula only mode"
+              >
+                <span className={cn(
+                  "absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform",
+                  settings.formulaOnly && "translate-x-6"
+                )} />
+              </button>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Activity Tracking — admin only */}
+      {isAdmin && (
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-base">Activity Tracking</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-2">
+            {ALL_ACTIVITIES.map(({ key, label, emoji }) => {
+              const on = settings.enabledActivities.includes(key);
+              return (
+                <div key={key} className="flex items-center justify-between p-3 rounded-lg bg-muted/50">
+                  <span className="flex items-center gap-2 font-medium text-sm">
+                    <span>{emoji}</span>{label}
+                  </span>
+                  <button
+                    onClick={() => toggleActivity(key)}
+                    className={cn(
+                      "relative w-10 h-5 rounded-full transition-colors",
+                      on ? "bg-primary" : "bg-muted-foreground/30"
+                    )}
+                    aria-label={`Toggle ${label}`}
+                  >
+                    <span className={cn(
+                      "absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform",
+                      on && "translate-x-5"
+                    )} />
+                  </button>
+                </div>
+              );
+            })}
+            <p className="text-xs text-muted-foreground pt-1">
+              Disabled activities are hidden from the nav and home screen.
+            </p>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Medication Presets */}
       {activeBaby && (
@@ -352,6 +534,98 @@ export default function SettingsPage() {
             ) : (
               <Button variant="outline" className="w-full h-11" onClick={() => setAddingPreset(true)}>
                 <Plus size={16} className="mr-2" />Add Preset
+              </Button>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Users — admin only */}
+      {isAdmin && (
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-base flex items-center gap-2">
+              <Users size={18} className="text-indigo-500" />
+              Users
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {userList.map((u) => (
+              <div key={u.id} className="flex items-center gap-2 p-3 rounded-lg bg-muted/50">
+                <div className="flex-1 min-w-0">
+                  <p className="font-medium text-sm truncate">{u.firstName} {u.lastName}</p>
+                  <p className="text-xs text-muted-foreground truncate">{u.email}</p>
+                </div>
+                <select
+                  value={u.role}
+                  onChange={(e) => handleRoleChange(u.id, e.target.value)}
+                  disabled={u.id === session?.user?.id}
+                  className="text-xs bg-muted border border-border rounded-md px-2 py-1.5 pr-6 appearance-none cursor-pointer disabled:opacity-50 disabled:cursor-default"
+                >
+                  <option value="admin">Admin</option>
+                  <option value="user">User</option>
+                  <option value="read_only">Read Only</option>
+                </select>
+                <Button
+                  variant="ghost" size="icon"
+                  className={cn(
+                    "h-8 w-8 shrink-0",
+                    u.id === session?.user?.id
+                      ? "invisible"
+                      : confirmDeleteUserId === u.id
+                        ? "text-destructive bg-destructive/10"
+                        : "text-muted-foreground hover:text-destructive"
+                  )}
+                  title={confirmDeleteUserId === u.id ? "Tap again to confirm delete" : "Delete user"}
+                  onClick={() => handleDeleteUser(u.id)}
+                  onBlur={() => setConfirmDeleteUserId(null)}
+                >
+                  <Trash2 size={15} />
+                </Button>
+              </div>
+            ))}
+
+            {showAddUser ? (
+              <form onSubmit={handleAddUser} className="space-y-3 pt-2 border-t border-border">
+                <div className="grid grid-cols-2 gap-2">
+                  <div className="space-y-1">
+                    <Label htmlFor="nu-first" className="text-sm">First Name</Label>
+                    <Input id="nu-first" value={newUserFirst} onChange={(e) => setNewUserFirst(e.target.value)} required className="h-10" />
+                  </div>
+                  <div className="space-y-1">
+                    <Label htmlFor="nu-last" className="text-sm">Last Name</Label>
+                    <Input id="nu-last" value={newUserLast} onChange={(e) => setNewUserLast(e.target.value)} required className="h-10" />
+                  </div>
+                </div>
+                <div className="space-y-1">
+                  <Label htmlFor="nu-email" className="text-sm">Email</Label>
+                  <Input id="nu-email" type="email" value={newUserEmail} onChange={(e) => setNewUserEmail(e.target.value)} required className="h-10" />
+                </div>
+                <div className="space-y-1">
+                  <Label htmlFor="nu-password" className="text-sm">Password</Label>
+                  <Input id="nu-password" type="password" value={newUserPassword} onChange={(e) => setNewUserPassword(e.target.value)} required className="h-10" />
+                </div>
+                <div className="space-y-1">
+                  <Label htmlFor="nu-role" className="text-sm">Role</Label>
+                  <select
+                    id="nu-role"
+                    value={newUserRole}
+                    onChange={(e) => setNewUserRole(e.target.value as typeof newUserRole)}
+                    className="w-full h-10 text-sm bg-background border border-input rounded-md px-3 cursor-pointer"
+                  >
+                    <option value="admin">Admin — Full access + manage users &amp; settings</option>
+                    <option value="user">User — Log and edit activities</option>
+                    <option value="read_only">Read Only — View only</option>
+                  </select>
+                </div>
+                <div className="flex gap-2">
+                  <Button type="submit" className="flex-1" disabled={savingUser}>{savingUser ? "Saving…" : "Add User"}</Button>
+                  <Button type="button" variant="outline" onClick={() => setShowAddUser(false)}>Cancel</Button>
+                </div>
+              </form>
+            ) : (
+              <Button variant="outline" className="w-full h-11" onClick={() => setShowAddUser(true)}>
+                <Plus size={16} className="mr-2" />Add User
               </Button>
             )}
           </CardContent>

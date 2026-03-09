@@ -1,53 +1,40 @@
 import { NextRequest, NextResponse } from "next/server";
-import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { medications, babies } from "@/lib/db/schema";
-import { eq, desc, and } from "drizzle-orm";
-import { headers } from "next/headers";
+import { eq, desc } from "drizzle-orm";
+import { requireSession, checkRole } from "@/lib/auth-helpers";
 
-async function getBabyForUser(userId: string, babyId: string) {
-  const result = await db
-    .select()
-    .from(babies)
-    .where(and(eq(babies.id, babyId), eq(babies.userId, userId)))
-    .limit(1);
-  return result[0] ?? null;
-}
-
-async function getMedForUser(userId: string, medId: string) {
-  const result = await db
-    .select({ babyId: medications.babyId })
-    .from(medications)
-    .where(eq(medications.id, medId))
-    .limit(1);
-  if (!result[0]) return null;
-  const baby = await getBabyForUser(userId, result[0].babyId);
-  return baby ? result[0] : null;
+async function babyExists(babyId: string) {
+  const [baby] = await db.select({ id: babies.id }).from(babies).where(eq(babies.id, babyId)).limit(1);
+  return baby ?? null;
 }
 
 export async function GET(request: NextRequest) {
-  const session = await auth.api.getSession({ headers: await headers() });
-  if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const session = await requireSession();
+  if (session instanceof NextResponse) return session;
 
   const babyId = request.nextUrl.searchParams.get("babyId");
   if (!babyId) return NextResponse.json({ error: "babyId required" }, { status: 400 });
+  if (!await babyExists(babyId)) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
-  const baby = await getBabyForUser(session.user.id, babyId);
-  if (!baby) return NextResponse.json({ error: "Not found" }, { status: 404 });
+  const limitParam = request.nextUrl.searchParams.get("limit");
+  const limit = limitParam ? parseInt(limitParam, 10) : 50;
 
   const result = await db
     .select()
     .from(medications)
     .where(eq(medications.babyId, babyId))
     .orderBy(desc(medications.timestamp))
-    .limit(50);
+    .limit(limit);
 
   return NextResponse.json(result);
 }
 
 export async function POST(request: NextRequest) {
-  const session = await auth.api.getSession({ headers: await headers() });
-  if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const session = await requireSession();
+  if (session instanceof NextResponse) return session;
+  const forbidden = checkRole(session, "user");
+  if (forbidden) return forbidden;
 
   const body = await request.json();
   const { babyId, name, dosage, timestamp, notes } = body;
@@ -55,9 +42,7 @@ export async function POST(request: NextRequest) {
   if (!babyId || !name || !dosage || !timestamp) {
     return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
   }
-
-  const baby = await getBabyForUser(session.user.id, babyId);
-  if (!baby) return NextResponse.json({ error: "Not found" }, { status: 404 });
+  if (!await babyExists(babyId)) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
   const [med] = await db
     .insert(medications)
@@ -74,15 +59,17 @@ export async function POST(request: NextRequest) {
 }
 
 export async function PATCH(request: NextRequest) {
-  const session = await auth.api.getSession({ headers: await headers() });
-  if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const session = await requireSession();
+  if (session instanceof NextResponse) return session;
+  const forbidden = checkRole(session, "user");
+  if (forbidden) return forbidden;
 
   const body = await request.json();
   const { id, name, dosage, timestamp, notes } = body;
   if (!id) return NextResponse.json({ error: "id required" }, { status: 400 });
 
-  const owned = await getMedForUser(session.user.id, id);
-  if (!owned) return NextResponse.json({ error: "Not found" }, { status: 404 });
+  const [existing] = await db.select({ id: medications.id }).from(medications).where(eq(medications.id, id)).limit(1);
+  if (!existing) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
   const [updated] = await db
     .update(medications)
@@ -99,14 +86,16 @@ export async function PATCH(request: NextRequest) {
 }
 
 export async function DELETE(request: NextRequest) {
-  const session = await auth.api.getSession({ headers: await headers() });
-  if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const session = await requireSession();
+  if (session instanceof NextResponse) return session;
+  const forbidden = checkRole(session, "user");
+  if (forbidden) return forbidden;
 
   const id = request.nextUrl.searchParams.get("id");
   if (!id) return NextResponse.json({ error: "id required" }, { status: 400 });
 
-  const owned = await getMedForUser(session.user.id, id);
-  if (!owned) return NextResponse.json({ error: "Not found" }, { status: 404 });
+  const [existing] = await db.select({ id: medications.id }).from(medications).where(eq(medications.id, id)).limit(1);
+  if (!existing) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
   await db.delete(medications).where(eq(medications.id, id));
   return NextResponse.json({ ok: true });

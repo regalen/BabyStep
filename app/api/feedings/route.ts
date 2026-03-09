@@ -1,39 +1,21 @@
 import { NextRequest, NextResponse } from "next/server";
-import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { feedings, babies } from "@/lib/db/schema";
 import { eq, desc, and, gte } from "drizzle-orm";
-import { headers } from "next/headers";
+import { requireSession, checkRole } from "@/lib/auth-helpers";
 
-async function getBabyForUser(userId: string, babyId: string) {
-  const result = await db
-    .select()
-    .from(babies)
-    .where(and(eq(babies.id, babyId), eq(babies.userId, userId)))
-    .limit(1);
-  return result[0] ?? null;
-}
-
-async function getFeedingForUser(userId: string, feedingId: string) {
-  const result = await db
-    .select({ babyId: feedings.babyId })
-    .from(feedings)
-    .where(eq(feedings.id, feedingId))
-    .limit(1);
-  if (!result[0]) return null;
-  const baby = await getBabyForUser(userId, result[0].babyId);
-  return baby ? result[0] : null;
+async function babyExists(babyId: string) {
+  const [baby] = await db.select({ id: babies.id }).from(babies).where(eq(babies.id, babyId)).limit(1);
+  return baby ?? null;
 }
 
 export async function GET(request: NextRequest) {
-  const session = await auth.api.getSession({ headers: await headers() });
-  if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const session = await requireSession();
+  if (session instanceof NextResponse) return session;
 
   const babyId = request.nextUrl.searchParams.get("babyId");
   if (!babyId) return NextResponse.json({ error: "babyId required" }, { status: 400 });
-
-  const baby = await getBabyForUser(session.user.id, babyId);
-  if (!baby) return NextResponse.json({ error: "Not found" }, { status: 404 });
+  if (!await babyExists(babyId)) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
   const fromParam = request.nextUrl.searchParams.get("from");
   const limitParam = request.nextUrl.searchParams.get("limit");
@@ -54,8 +36,10 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
-  const session = await auth.api.getSession({ headers: await headers() });
-  if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const session = await requireSession();
+  if (session instanceof NextResponse) return session;
+  const forbidden = checkRole(session, "user");
+  if (forbidden) return forbidden;
 
   const body = await request.json();
   const { babyId, type, amountMl, side, startTime, endTime, notes } = body;
@@ -63,9 +47,7 @@ export async function POST(request: NextRequest) {
   if (!babyId || !type || !startTime) {
     return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
   }
-
-  const baby = await getBabyForUser(session.user.id, babyId);
-  if (!baby) return NextResponse.json({ error: "Not found" }, { status: 404 });
+  if (!await babyExists(babyId)) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
   const [feeding] = await db
     .insert(feedings)
@@ -84,15 +66,17 @@ export async function POST(request: NextRequest) {
 }
 
 export async function PATCH(request: NextRequest) {
-  const session = await auth.api.getSession({ headers: await headers() });
-  if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const session = await requireSession();
+  if (session instanceof NextResponse) return session;
+  const forbidden = checkRole(session, "user");
+  if (forbidden) return forbidden;
 
   const body = await request.json();
   const { id, type, side, amountMl, startTime, endTime, notes } = body;
   if (!id) return NextResponse.json({ error: "id required" }, { status: 400 });
 
-  const owned = await getFeedingForUser(session.user.id, id);
-  if (!owned) return NextResponse.json({ error: "Not found" }, { status: 404 });
+  const [existing] = await db.select({ id: feedings.id }).from(feedings).where(eq(feedings.id, id)).limit(1);
+  if (!existing) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
   const [updated] = await db
     .update(feedings)
@@ -111,14 +95,16 @@ export async function PATCH(request: NextRequest) {
 }
 
 export async function DELETE(request: NextRequest) {
-  const session = await auth.api.getSession({ headers: await headers() });
-  if (!session) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const session = await requireSession();
+  if (session instanceof NextResponse) return session;
+  const forbidden = checkRole(session, "user");
+  if (forbidden) return forbidden;
 
   const id = request.nextUrl.searchParams.get("id");
   if (!id) return NextResponse.json({ error: "id required" }, { status: 400 });
 
-  const owned = await getFeedingForUser(session.user.id, id);
-  if (!owned) return NextResponse.json({ error: "Not found" }, { status: 404 });
+  const [existing] = await db.select({ id: feedings.id }).from(feedings).where(eq(feedings.id, id)).limit(1);
+  if (!existing) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
   await db.delete(feedings).where(eq(feedings.id, id));
   return NextResponse.json({ ok: true });

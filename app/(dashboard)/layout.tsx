@@ -4,7 +4,7 @@ import { DashboardProvider } from "@/components/app/DashboardProvider";
 import { auth } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { babies } from "@/lib/db/schema";
-import { eq } from "drizzle-orm";
+import { isNull } from "drizzle-orm";
 import { headers } from "next/headers";
 
 export default async function DashboardLayout({
@@ -17,10 +17,11 @@ export default async function DashboardLayout({
   try {
     const session = await auth.api.getSession({ headers: await headers() });
     if (session?.user) {
+      // All users share all babies (household model) — filter only archivedAt
       babyList = await db
         .select()
         .from(babies)
-        .where(eq(babies.userId, session.user.id));
+        .where(isNull(babies.archivedAt));
     }
   } catch {
     // session unavailable — proxy will redirect if needed

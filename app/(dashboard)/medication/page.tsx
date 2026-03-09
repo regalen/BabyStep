@@ -11,6 +11,8 @@ import { cn } from "@/lib/utils";
 import { toDatetimeLocal, formatDistanceToNow } from "@/lib/time";
 import { useDashboard, type Baby } from "@/components/app/DashboardProvider";
 import { BabyChipSelector } from "@/components/app/BabyChipSelector";
+import { useSession } from "@/lib/auth-client";
+import { ReadOnlyBanner } from "@/components/app/ReadOnlyBanner";
 
 interface MedPreset {
   id: string;
@@ -28,6 +30,8 @@ interface MedEntry {
 
 export default function MedicationPage() {
   const router = useRouter();
+  const { data: session } = useSession();
+  const isReadOnly = (session?.user as { role?: string } | undefined)?.role === "read_only";
   const { activeBaby, setActiveBaby } = useDashboard();
   const [selectedBaby, setSelectedBaby] = useState<Baby | null>(null);
   const [showBabyError, setShowBabyError] = useState(false);
@@ -91,6 +95,9 @@ export default function MedicationPage() {
         </h2>
       </div>
 
+      {isReadOnly ? (
+        <ReadOnlyBanner />
+      ) : (
       <Card>
         <CardContent className="pt-5 space-y-5">
           {/* Baby selector */}
@@ -199,6 +206,7 @@ export default function MedicationPage() {
           </Button>
         </CardContent>
       </Card>
+      )}
 
       {/* History */}
       {history.length > 0 && (

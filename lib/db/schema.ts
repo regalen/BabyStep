@@ -15,6 +15,7 @@ export const user = sqliteTable("user", {
   // Extended user fields
   firstName: text("firstName").notNull().default(""),
   lastName: text("lastName").notNull().default(""),
+  role: text("role", { enum: ["admin", "user", "read_only"] }).notNull().default("user"),
 });
 
 export const session = sqliteTable("session", {
@@ -70,6 +71,7 @@ export const babies = sqliteTable("babies", {
   birthWeightGrams: real("birthWeightGrams"),
   birthTime: text("birthTime"), // ISO datetime string
   picturePath: text("picturePath"),
+  archivedAt: integer("archivedAt", { mode: "timestamp" }),
   createdAt: integer("createdAt", { mode: "timestamp" })
     .notNull()
     .$defaultFn(() => new Date()),
@@ -160,10 +162,9 @@ export const appSettings = sqliteTable("appSettings", {
   id: text("id")
     .primaryKey()
     .$defaultFn(() => crypto.randomUUID()),
+  // nullable — global singleton row not tied to any specific user
   userId: text("userId")
-    .notNull()
-    .unique()
-    .references(() => user.id, { onDelete: "cascade" }),
+    .references(() => user.id, { onDelete: "set null" }),
   units: text("units", { enum: ["metric", "imperial"] })
     .notNull()
     .default("metric"),

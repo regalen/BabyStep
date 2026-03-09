@@ -9,6 +9,8 @@ import { Moon, Play, Square } from "lucide-react";
 import { formatDuration, formatDistanceToNow, formatTime } from "@/lib/time";
 import { useDashboard, type Baby } from "@/components/app/DashboardProvider";
 import { BabyChipSelector } from "@/components/app/BabyChipSelector";
+import { useSession } from "@/lib/auth-client";
+import { ReadOnlyBanner } from "@/components/app/ReadOnlyBanner";
 
 interface SleepEntry {
   id: string;
@@ -29,6 +31,8 @@ interface ActiveSleep {
 function SleepPageInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
+  const { data: session } = useSession();
+  const isReadOnly = (session?.user as { role?: string } | undefined)?.role === "read_only";
   const { babies, activeBaby, setActiveBaby } = useDashboard();
   const [selectedBaby, setSelectedBaby] = useState<Baby | null>(null);
   const [showBabyError, setShowBabyError] = useState(false);
@@ -163,6 +167,8 @@ function SleepPageInner() {
         </h2>
       </div>
 
+      {isReadOnly && <ReadOnlyBanner />}
+
       {/* Baby selector */}
       <BabyChipSelector
         selectedId={selectedBaby?.id ?? null}
@@ -171,7 +177,7 @@ function SleepPageInner() {
       />
 
       {/* Main sleep timer card */}
-      <Card className={isSleeping ? "border-violet-500/40 shadow-lg shadow-violet-500/10" : ""}>
+      {!isReadOnly && <Card className={isSleeping ? "border-violet-500/40 shadow-lg shadow-violet-500/10" : ""}>
         <CardContent className="pt-6 pb-6 flex flex-col items-center gap-6">
           {/* Status */}
           <div className="text-center">
@@ -219,7 +225,7 @@ function SleepPageInner() {
             )}
           </Button>
         </CardContent>
-      </Card>
+      </Card>}
 
       {/* History */}
       {history.length > 0 && (

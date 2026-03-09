@@ -11,6 +11,7 @@ import { Milk, Baby, Moon, Plus, ChevronLeft, Pencil, Pill } from "lucide-react"
 import { formatDistanceToNow, formatAge, formatDuration, toDatetimeLocal } from "@/lib/time";
 import { useDashboard } from "@/components/app/DashboardProvider";
 import { formatVolume, parseVolumeToMl, volumeLabel } from "@/lib/units";
+import { useSession } from "@/lib/auth-client";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -37,6 +38,11 @@ interface ActivityMedication {
   timestamp: string; sortTime: string;
 }
 type ActivityItem = ActivityFeeding | ActivityDiaper | ActivitySleep | ActivityMedication;
+
+interface BabyInfo {
+  id: string; firstName: string; lastName: string; dob: string;
+  birthWeightGrams: number | null; archivedAt: string | null;
+}
 
 interface DashboardData {
   lastFeeding: LastFeeding | null; lastDiaper: LastDiaper | null; lastSleep: LastSleep | null;
@@ -65,7 +71,7 @@ function buildDiaperChart(diapers: DiaperEntry[]) {
   return days;
 }
 
-function activitySummary(item: ActivityItem, units: string): { iconKind: string; title: string; detail: string; timeStr: string } {
+function activitySummary(item: ActivityItem, units: "metric" | "imperial"): { iconKind: string; title: string; detail: string; timeStr: string } {
   switch (item.kind) {
     case "feeding": {
       const dur = item.endTime ? formatDuration(new Date(item.endTime).getTime() - new Date(item.startTime).getTime()) : null;
@@ -102,7 +108,7 @@ const FEED_SIDES = ["left", "right", "both"] as const;
 // ─── Edit Dialog ──────────────────────────────────────────────────────────────
 
 function EditDialog({ item, units, onClose, onSaved }: {
-  item: ActivityItem; units: string; onClose: () => void; onSaved: () => void;
+  item: ActivityItem; units: "metric" | "imperial"; onClose: () => void; onSaved: () => void;
 }) {
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -272,14 +278,30 @@ function EditDialog({ item, units, onClose, onSaved }: {
 
 export default function BabyDashboardPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
+  const { data: session } = useSession();
+  const isReadOnly = (session?.user as { role?: string } | undefined)?.role === "read_only";
   const { babies, setActiveBaby, settings } = useDashboard();
   const { enabledActivities, units } = settings;
-  const baby = babies.find((b) => b.id === id) ?? null;
+  const activeBaby = babies.find((b) => b.id === id) ?? null;
+  const [archivedBaby, setArchivedBaby] = useState<BabyInfo | null>(null);
+  const baby = activeBaby ?? archivedBaby;
   const [data, setData] = useState<DashboardData | null>(null);
   const [activity, setActivity] = useState<ActivityItem[]>([]);
   const [editItem, setEditItem] = useState<ActivityItem | null>(null);
 
-  useEffect(() => { if (baby) setActiveBaby(baby); }, [baby, setActiveBaby]);
+  useEffect(() => { if (activeBaby) setActiveBaby(activeBaby); }, [activeBaby, setActiveBaby]);
+
+  // If baby not in active list, check if it's archived
+  useEffect(() => {
+    if (activeBaby || !id) return;
+    fetch(`/api/babies?includeArchived=true`)
+      .then((r) => r.json())
+      .then((all: BabyInfo[]) => {
+        const found = all.find((b) => b.id === id) ?? null;
+        setArchivedBaby(found);
+      })
+      .catch(() => {});
+  }, [id, activeBaby]);
 
   function fetchDashboard() {
     if (!id) return;
@@ -341,6 +363,12 @@ export default function BabyDashboardPage({ params }: { params: Promise<{ id: st
 
   return (
     <div className="p-4 space-y-5 max-w-lg mx-auto">
+      {archivedBaby && (
+        <div className="flex items-center gap-2 px-3 py-2.5 rounded-lg bg-amber-500/15 border border-amber-500/30 text-amber-700 dark:text-amber-400 text-sm">
+          <span className="shrink-0">⚠</span>
+          <span>This baby is archived. Go to <Link href="/settings" className="underline underline-offset-2">Settings</Link> to restore them.</span>
+        </div>
+      )}
       <div className="pt-2 flex items-center gap-3">
         <Link href="/" className="text-muted-foreground hover:text-foreground transition-colors">
           <ChevronLeft size={22} />
@@ -484,11 +512,13 @@ export default function BabyDashboardPage({ params }: { params: Promise<{ id: st
                         {timeStr}{detail ? ` · ${detail}` : ""}
                       </p>
                     </div>
-                    <Button variant="ghost" size="icon"
-                      className="shrink-0 h-8 w-8 text-muted-foreground hover:text-foreground"
-                      onClick={() => setEditItem(item)}>
-                      <Pencil size={15} />
-                    </Button>
+                    {!isReadOnly && (
+                      <Button variant="ghost" size="icon"
+                        className="shrink-0 h-8 w-8 text-muted-foreground hover:text-foreground"
+                        onClick={() => setEditItem(item)}>
+                        <Pencil size={15} />
+                      </Button>
+                    )}
                   </CardContent>
                 </Card>
               );
